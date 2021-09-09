@@ -1,0 +1,32 @@
+<%doc>
+List the ticket templates associated with a queue, add a new one, or edit an
+existing one.
+</%doc>
+\
+<%ARGS>
+$id
+$Ticket => undef
+</%ARGS>
+\
+<%INIT>
+my $QueueObj = RT::Queue->new( $session{'CurrentUser'} );
+$QueueObj->Load($id);
+
+if ( !$QueueObj->id ) {
+    Abort( loc( "Queue [_1] not found", $id ) );
+}
+
+if (not(   $QueueObj->CurrentUserHasRight('ShowTicketTemplate')
+        || $QueueObj->CurrentUserHasRight('ModifyTicketTemplate') )
+   )
+{
+    Abort( loc('Permission denied') );
+}
+
+my $Title = loc( 'Template tickets for queue [_1]', $QueueObj->Name );
+</%INIT>
+\
+<& /Admin/Elements/Header, Title => $Title &>
+<& /Elements/Tabs &>
+
+TODO: writeme
