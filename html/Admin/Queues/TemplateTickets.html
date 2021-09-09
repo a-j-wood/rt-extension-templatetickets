@@ -6,6 +6,7 @@ existing one.
 <%ARGS>
 $id
 $Ticket => undef
+$CreateTemplate => undef
 </%ARGS>
 \
 <%INIT>
@@ -23,10 +24,80 @@ if (not(   $QueueObj->CurrentUserHasRight('ShowTicketTemplate')
     Abort( loc('Permission denied') );
 }
 
+my @Results = ();
+
 my $Title = loc( 'Template tickets for queue [_1]', $QueueObj->Name );
+
+my $TicketObj = undef;
+if ($Ticket) {
+    $TicketObj = RT::Ticket->new( $session{'CurrentUser'} );
+    $TicketObj->Load($Ticket);
+    if ( not $TicketObj->id ) {
+        push @Results, loc( 'Ticket [_1] not found', $Ticket );
+        $Ticket         = undef;
+        $TicketObj      = undef;
+        $CreateTemplate = 0;
+    } elsif ( not $TicketObj->CurrentUserHasRight('ShowTicket') ) {
+        push @Results, loc('No permission to view ticket');
+        $Ticket         = undef;
+        $TicketObj      = undef;
+        $CreateTemplate = 0;
+    } elsif ( $TicketObj->Queue != $QueueObj->id ) {
+        push @Results,
+            loc( 'Ticket [_1] is not in queue [_2]',
+            $Ticket, $QueueObj->Name || $id );
+        $Ticket         = undef;
+        $TicketObj      = undef;
+        $CreateTemplate = 0;
+    } elsif ( $CreateTemplate
+        && not $QueueObj->CurrentUserHasRight('ModifyTicketTemplate') )
+    {
+        push @Results,
+            loc( 'No permission to modify ticket templates in queue [_1]',
+            $QueueObj->Name );
+        $Ticket         = undef;
+        $TicketObj      = undef;
+        $CreateTemplate = 0;
+    } elsif ($CreateTemplate) {
+        $Title = loc( 'Create new template ticket for queue [_1]',
+            $QueueObj->Name );
+    } else {
+        $Title = loc( 'Queue [_1]: Template ticket #[_2]: [_3]',
+            $QueueObj->Name, $TicketObj->id, $TicketObj->Subject );
+    }
+}
 </%INIT>
 \
 <& /Admin/Elements/Header, Title => $Title &>
 <& /Elements/Tabs &>
+<& /Elements/ListActions, actions => \@Results &>
 
-TODO: writeme
+% if ($CreateTemplate) {
+\
+TODO: add ticket
+\
+% } elsif ($Ticket) {
+\
+TODO: edit ticket
+\
+% } else {
+\
+<&| /Widgets/TitleBox, title => loc('Template tickets') &>
+TODO: list of template tickets
+</&>
+\
+%     if ( $QueueObj->CurrentUserHasRight('ModifyTicketTemplate') ) {
+<&| /Widgets/TitleBox, title => loc('Create a new template ticket') &>
+<form action="TemplateTickets.html" method="post">
+<input type="hidden" name="id" value="<% $id %>" />
+<input type="hidden" name="CreateTemplate" value="1" />
+<p>
+<&|/l&>Create new template ticket from an existing ticket</&>:
+<input type="text" size="8" data-autocomplete="Tickets" name="Ticket" />
+<input type="submit" value="<&|/l&>Create</&>" />
+</p>
+</form>
+</&>
+%     }
+\
+% }
