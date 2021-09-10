@@ -17,12 +17,25 @@ if ( !$QueueObj->id ) {
     Abort( loc( "Queue [_1] not found", $id ) );
 }
 
-if (not(   $QueueObj->CurrentUserHasRight('ShowTicketTemplate')
-        || $QueueObj->CurrentUserHasRight('ModifyTicketTemplate') )
+my $CanView = $QueueObj->CurrentUserHasRight('ShowTicketTemplate');
+my $CanEdit = $QueueObj->CurrentUserHasRight('ModifyTicketTemplate');
+if (not(   $CanView
+        || $CanEdit )
    )
 {
     Abort( loc('Permission denied') );
 }
+
+my %FieldNames = (
+    'Subject'       => loc('Subject'),
+    'Content'       => loc('Content'),
+    'Priority'      => loc('Priority'),
+    'FinalPriority' => loc('Final priority'),
+    'Requestor'     => loc('Requestors'),
+    'CC'            => loc('CCs'),
+    'AdminCC'       => loc('AdminCCs'),
+    'Queue'         => loc('Queue'),
+);
 
 my @MainFields = (
     'Subject',   'Content', 'Priority', 'FinalPriority',
@@ -111,8 +124,38 @@ if ($TicketObj) {
     $TemplateContent =~ s/<!--\b.*?-->//sg;
     $TemplateContent =~ s/<span\b[^>]*?\bclass=[^>]*?actions.*$//mig;
 
+    my @TicketCustomFieldIDs = ();
+    my $TicketCustomFields   = $TicketObj->CustomFields;
+    while ( my $CustomField = $TicketCustomFields->Next ) {
+        push @TicketCustomFieldIDs, 'CF.'.$CustomField->id;
+        $FieldNames{ 'CF.' . $CustomField->id } = $CustomField->Name;
+    }
+    push @MainFields,
+        sort { $FieldNames{ 'CF.' . $a } cmp $FieldNames{ 'CF.' . $b } }
+        @TicketCustomFieldIDs;
+
+    my $mode                      = $RT::Link::TYPEMAP{'Member'}->{'Mode'};
+    my $ModeURI                   = "${mode}URI";
+    my $ModeObj                   = "${mode}Obj";
+    my %ChildTicketCustomFieldIDs = ();
+    my $ChildTickets              = $TicketObj->Members;
+    while ( my $ChildTicketLink = $ChildTickets->Next ) {
+        my $ChildTicketObj          = $ChildTicketLink->$ModeObj;
+        my $ChildTicketCustomFields = $ChildTicketObj->CustomFields;
+        while ( my $CustomField = $ChildTicketCustomFields->Next ) {
+            $ChildTicketCustomFieldIDs{ 'CF.'.$CustomField->id } = 1;
+            $FieldNames{ 'CF.' . $CustomField->id } = $CustomField->Name;
+        }
+    }
+    push @ChildFields,
+        sort { $FieldNames{ 'CF.' . $a } cmp $FieldNames{ 'CF.' . $b } }
+        keys %ChildTicketCustomFieldIDs;
+
     my $Attribute = $TicketObj->FirstAttribute('TemplateTicketsDefinition');
     $TemplateSettings = $Attribute->Content || {} if ( defined $Attribute );
+
+    $TemplateSettings->{'Fields'} = [ @DefaultFields ] if (scalar @{$TemplateSettings->{'Fields'}||[]} == 0);
+    $TemplateSettings->{'ChildFields'} = [ @DefaultChildFields ] if (scalar @{$TemplateSettings->{'ChildFields'}||[]} == 0);
 
     # TODO: update settings when appropriate
 
@@ -126,7 +169,152 @@ if ($TicketObj) {
 % if ($Ticket) {
 \
 <&| /Widgets/TitleBox, title => loc('Template ticket configuration') &>
-TODO: edit template ticket or create a new one
+% if ($CanEdit) {
+<form action="TemplateTickets.html">
+<input type="hidden" name="id" value="<% $id %>" />
+<input type="hidden" name="Ticket" value="<% $Ticket %>" />
+<input type="hidden" name="Store" value="1" />
+% }
+
+<table width="100%" border="0" cellpadding="8">
+<tr>
+<td style="vertical-align:top;">
+<h3><&|/l&>Settings</&></h3>
+ <table border="0">
+ <tr>\
+ <th style="text-align:right;"><&|/l&>Category</&>:</th>\
+% if ($CanEdit) {
+ <td><input type="text" size="30" name="Category" value="<% $ARGS{'Category'} || $TemplateSettings->{'Category'} %>" /></td>\
+% } else {
+ <td><% $TemplateSettings->{'Category'} %></td>\
+% }
+ </tr>
+ <tr>\
+ <th style="text-align:right;vertical-align:top;"><&|/l&>Description</&>:</th>\
+% if ($CanEdit) {
+ <td><textarea name="Description" rows="4" cols="30"><% $ARGS{'Description'} || $TemplateSettings->{'Description'} %></textarea></td>\
+% } else {
+ <td><% $TemplateSettings->{'Description'} %></td>\
+% }
+ </tr>
+ <tr>\
+ <th style="text-align:right;white-space:nowrap;"><&|/l&>Child tickets</&>:</th>\
+% if ($CanEdit) {
+ <td><label><input type="checkbox" name="ChildTickets" value="1" <% ($ARGS{'ChildTickets'} || $TemplateSettings->{'ChildTickets'}) ? 'checked' : '' %> /> <&|/l&>Include child tickets of this template ticket</&></label></td>\
+% } elsif ($TemplateSettings->{'ChildTickets'}) {
+ <td><&|/l&>Include child tickets of this template ticket</&></td>\
+% } else {
+ <td><&|/l&>Do not include child tickets of this template ticket</&></td>\
+% }
+ </tr>
+ </table>
+</td><td style="vertical-align:top;border-left:solid black 1px;">
+<h3><&|/l&>Groups</&></h3>
+<p><&|/l&>Which groups can see this template.  If none are selected, everyone can see it.</&></p>
+% if ($CanEdit) {
+<p>
+<input type="text" size="20" data-autocomplete="Groups" name="AddGroup" />
+<button id="AddGroupButton"><&|/l&>Add group</&></button>
+</p>
+% }
+<div style="height:10em;overflow:auto;">
+<ul id="TemplateGroupsList">
+<li class="EmptyList"><i><&|/l&>No groups selected - unrestricted access</&></i></li>
+%# TODO: list selected groups
+</ul>
+</div>
+</td><td style="vertical-align:top;border-left:solid black 1px;">
+<h3><&|/l&>Template fields</&></h3>
+<p><&|/l&>Which fields will be copied into a new ticket when using this template.</&></p>
+<div style="height:12em;overflow:auto;">
+% foreach my $Field (@MainFields) {
+%     if ($CanEdit) {
+<label><input type="checkbox" name="TemplateFields" value="<% $Field %>" <% (grep { $_ eq $Field } @{$TemplateSettings->{'Fields'}||[]}) ? 'checked' : '' %> /> <% $FieldNames{$Field} %></label><br />
+%     } elsif (grep { $_ eq $Field } @{$TemplateSettings->{'Fields'}||[]}) {
+<% $FieldNames{$Field} %><br />
+%     }
+% }
+</div>
+</td><td id="ChildTicketFields" style="vertical-align:top;border-left:solid black 1px;">
+<h3><&|/l&>Child ticket fields</&></h3>
+<p><&|/l&>Which fields from this template ticket's child tickets will be copied into the child tickets of a newly created ticket.</&></p>
+<div style="height:12em;overflow:auto;">
+% foreach my $Field (@ChildFields) {
+%     if ($CanEdit) {
+<label><input type="checkbox" name="TemplateChildFields" value="<% $Field %>" <% (grep { $_ eq $Field } @{$TemplateSettings->{'ChildFields'}||[]}) ? 'checked' : '' %> /> <% $FieldNames{$Field} %></label><br />
+%     } elsif (grep { $_ eq $Field } @{$TemplateSettings->{'ChildFields'}||[]}) {
+<% $FieldNames{$Field} %><br />
+%     }
+% }
+</div>
+</td>
+</tr>
+% if ($CanEdit) {
+<tr><td style="text-align:left;"><& /Elements/Submit, Label => $CreateTemplate ? loc('Create ticket template') : loc('Store changes') &></td><td colspan="3"></td></tr>
+% }
+</table>
+% if ($CanEdit) {
+</form>
+<script type="text/javascript">
+function removeGroup (e) {
+    var itemCount = jQuery('#TemplateGroupsList li').length;
+    if (itemCount < 3) {
+    	jQuery('#TemplateGroupsList li.EmptyList').show();
+    }
+    jQuery(this).parents('li').first().remove();
+    e.preventDefault();
+    return false;
+}
+jQuery(function () {
+    jQuery('input[name=ChildTickets]').on('click', function () {
+        if (jQuery(this).is(':checked')) {
+            jQuery('#ChildTicketFields').show();
+        } else {
+            jQuery('#ChildTicketFields').hide();
+        }
+    });
+    jQuery('input[name=AddGroup]').on('keydown', function (e) {
+        if (e.keyCode == 13) {
+            e.preventDefault();
+            jQuery('#AddGroupButton').trigger('click');
+            return false;
+        }
+    });
+    jQuery('#AddGroupButton').on('click', function (e) {
+        var newGroup = jQuery('input[name=AddGroup]').val();
+        if (newGroup != '') {
+            var newItem = jQuery('<li></li>');
+            var newButton = jQuery('<button></button>');
+            var newInput = jQuery('<input />');
+
+            newButton.text(<% loc('Remove') |j%>);
+            newButton.on('click', removeGroup);
+
+            newInput.attr('type', 'hidden');
+            newInput.attr('name', 'TemplateGroups');
+            newInput.attr('value', newGroup);
+
+            newItem.text(' ' + newGroup);
+            newItem.append(newInput);
+            newItem.prepend(newButton);
+
+            jQuery('#TemplateGroupsList').append(newItem);
+            jQuery('#TemplateGroupsList li.EmptyList').hide();
+            jQuery('input[name=AddGroup]').val('');
+        }
+        e.preventDefault();
+        return false;
+    });
+    jQuery('#TemplateGroupsList li button').on('click', removeGroup);
+});
+</script>
+% }
+% if (not ($ARGS{'ChildTickets'} || $TemplateSettings->{'ChildTickets'})) {
+<script type="text/javascript">
+jQuery('#ChildTicketFields').hide();
+</script>
+% }
+
 </&>
 
 <div><hr /></div>
