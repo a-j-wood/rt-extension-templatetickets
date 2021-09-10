@@ -24,6 +24,14 @@ if (not(   $QueueObj->CurrentUserHasRight('ShowTicketTemplate')
     Abort( loc('Permission denied') );
 }
 
+my @MainFields = (
+    'Subject',   'Content', 'Priority', 'FinalPriority',
+    'Requestor', 'CC',      'AdminCC'
+);
+my @DefaultFields      = ( 'Subject', 'Content' );
+my @ChildFields        = ( 'Queue',   @MainFields );
+my @DefaultChildFields = ( 'Queue',   'Subject', 'Content' );
+
 my @Results = ();
 
 my $Title = loc( 'Template tickets for queue [_1]', $QueueObj->Name );
@@ -66,19 +74,81 @@ if ($Ticket) {
             $QueueObj->Name, $TicketObj->id, $TicketObj->Subject );
     }
 }
+
+my $TemplateSettings = {};
+my $TemplateSummary  = '';
+my $TemplateContent  = '';
+
+if ($TicketObj) {
+    my $ReadonlyTicketObj = {%$TicketObj};
+    bless( $ReadonlyTicketObj, ref $TicketObj );
+
+    $ReadonlyTicketObj->{'CurrentUserCanSetOwner'} = sub { return 0; };
+    $ReadonlyTicketObj->{'CurrentUserHasRight'}    = sub { return 0; };
+
+    my $TicketHistory = $ReadonlyTicketObj->SortedTransactions;
+    $TicketHistory->RowsPerPage(1);
+
+    $TemplateSummary = $m->scomp( '/Ticket/Elements/ShowSummary',
+        'Ticket' => $ReadonlyTicketObj );
+
+    $TemplateSummary =~ s/<form.*?<\/form>//sig;
+    $TemplateSummary =~ s/<span\b[^>]*?\bclass=[^>]*?create.*?<\/span>//sig;
+
+    $TemplateContent = $m->scomp(
+        '/Elements/ShowHistory',
+        'Object'       => $ReadonlyTicketObj,
+        'Transactions' => $TicketHistory,
+        'Attachments' =>
+            $ReadonlyTicketObj->Attachments( 'WithHeaders' => 0 ),
+        'AttachmentContent' => $ReadonlyTicketObj->TextAttachments,
+        'ShowHeaders'       => 0,
+        'ShowTitle'         => 0,
+        'ShowDisplayModes'  => 0,
+        'PathPrefix'        => RT->Config->Get('WebPath') . '/Ticket/'
+    );
+
+    $TemplateContent =~ s/<!--\b.*?-->//sg;
+    $TemplateContent =~ s/<span\b[^>]*?\bclass=[^>]*?actions.*$//mig;
+
+    my $Attribute = $TicketObj->FirstAttribute('TemplateTicketsDefinition');
+    $TemplateSettings = $Attribute->Content || {} if ( defined $Attribute );
+
+    # TODO: update settings when appropriate
+
+}
 </%INIT>
 \
 <& /Admin/Elements/Header, Title => $Title &>
 <& /Elements/Tabs &>
 <& /Elements/ListActions, actions => \@Results &>
 
-% if ($CreateTemplate) {
+% if ($Ticket) {
 \
-TODO: add ticket
-\
-% } elsif ($Ticket) {
-\
-TODO: edit ticket
+<&| /Widgets/TitleBox, title => loc('Template ticket configuration') &>
+TODO: edit template ticket or create a new one
+</&>
+
+<div><hr /></div>
+
+<h2><a target="_blank" href="<% RT->Config->Get('WebPath') %>/Ticket/Display.html?id=<% $TicketObj->id %>"><&|/l, $TicketObj->Id, $TicketObj->Subject &>#[_1]: [_2]</&></a></h2>
+
+<&| /Widgets/TitleBox, title => loc('Template ticket summary') &>
+<p>
+<&|/l&>This is just a read-only summary.  Open the original ticket to change the details below.</&>
+</p>
+<p>
+<a class="button" target="_blank" href="<% RT->Config->Get('WebPath') %>/Ticket/Display.html?id=<% $TicketObj->id %>"><&|/l&>Open the original ticket</&></a>
+</p>
+<% $TemplateSummary |n %>
+<% $TemplateContent |n %>
+<script type="text/javascript">
+jQuery(function () { 
+    jQuery('div.ticket-info-requestor').remove();
+    jQuery('div.ticket-info-reminders').remove();
+});
+</script>
+</&>
 \
 % } else {
 \

@@ -8,12 +8,19 @@ my $RequestPath = $HTML::Mason::Commands::r->path_info;
 $RequestPath =~ s!/{2,}!/!g;
 
 if (   ( $RequestPath =~ m{^/Admin/Queues} )
-    && ( ( $DECODED_ARGS->{'id'} || '' ) =~ /\S/ ) )
+    && ( ( $DECODED_ARGS->{'id'} || $DECODED_ARGS->{'Queue'} || '' ) =~ /\S/ )
+   )
 {
-    PageMenu()->child('templates')->child(
-        'tickettemplates' => 'title' => loc('Tickets'),
-        path => '/Admin/Queues/TemplateTickets.html?id='
-            . $m->interp->apply_escapes( $DECODED_ARGS->{'id'}, 'u' )
-    );
+    my $PageMenu = PageMenu();
+    if ( $PageMenu && $PageMenu->child('templates') ) {
+
+        $PageMenu->child('templates')->child(
+            'tickettemplates' => 'title' => loc('Tickets'),
+            path => '/Admin/Queues/TemplateTickets.html?id='
+                . $m->interp->apply_escapes(
+                $DECODED_ARGS->{'id'} || $DECODED_ARGS->{'Queue'}, 'u'
+                )
+        );
+    }
 }
 </%INIT>
