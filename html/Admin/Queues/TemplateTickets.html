@@ -104,6 +104,7 @@ my $TemplateTickets = RT::Tickets->new( $session{'CurrentUser'} );
 $TemplateTickets->FromSQL( 'Queue = '
         . $QueueObj->id
         . ' AND HasAttribute = "TemplateTicketsDefinition"' );
+my $TemplateTicketObjects = $TemplateTickets->ItemsArrayRef;
 
 my %TemplateCategories  = ();
 my %AllTemplateSettings = ();
@@ -117,6 +118,16 @@ while ( my $TemplateTicketObj = $TemplateTickets->Next ) {
     $AllTemplateSettings{ $TemplateTicketObj->id } = $Settings;
     $TemplateCategories{ $Settings->{'Category'} }++;
 }
+
+$TemplateTicketObjects = [
+    sort {
+        ( $AllTemplateSettings{ $a->id }->{'Category'} || '' ) eq
+            ( $AllTemplateSettings{ $b->id }->{'Category'} || '' )
+            ? ( $a->Subject cmp $b->Subject )
+            : ( $AllTemplateSettings{ $a->id }->{'Category'}  || '' )
+            cmp( $AllTemplateSettings{ $b->id }->{'Category'} || '' )
+        } @$TemplateTicketObjects
+];
 
 my $TemplateSettings = {};
 my $TemplateSummary  = '';
@@ -469,7 +480,57 @@ jQuery(function () {
 % } else {
 \
 <&| /Widgets/TitleBox, title => loc('Template tickets') &>
-TODO: list of template tickets
+%     if (scalar @$TemplateTicketObjects > 0) {
+<div class="table-responsive">
+<table cellspacing="0" class="table ticket-list collection-as-table" data-class="RT::Ticket">
+<colgroup><col><col><col><col><col></colgroup>
+<tr class="collection-as-table">\
+<th class="collection-as-table" style="text-align:right;">#</th>\
+<th class="collection-as-table"><&|/l&>Subject</&></th>\
+<th class="collection-as-table"><&|/l&>Description</&></th>\
+<th class="collection-as-table"><&|/l&>Category</&></th>\
+<th class="collection-as-table"><&|/l&>Groups</&></th>\
+</tr>
+%         my $RowNum = 0;
+%         my %GroupIdToName = ();
+%         foreach my $TemplateTicketObj (@$TemplateTicketObjects) {
+%             $RowNum++;
+<tr class="<% $RowNum % 2 ? 'oddline' : 'evenline' %>">\
+<td class="collection-as-table" style="text-align:right;"><a href="TemplateTickets.html?id=<% $id %>&amp;Ticket=<% $TemplateTicketObj->id %>"><% $TemplateTicketObj->id %></a></td>\
+<td class="collection-as-table"><a href="TemplateTickets.html?id=<% $id %>&amp;Ticket=<% $TemplateTicketObj->id %>"><% $TemplateTicketObj->Subject %></a></td>\
+<td class="collection-as-table"><% $AllTemplateSettings{$TemplateTicketObj->id}->{'Description'} %></td>\
+<td class="collection-as-table"><% $AllTemplateSettings{$TemplateTicketObj->id}->{'Category'} %></td>\
+<td class="collection-as-table">\
+%             my %DisplayedTemplateGroupNames = ();
+%             foreach my $GroupId ( @{ $AllTemplateSettings{$TemplateTicketObj->id}->{'Groups'} || [] } ) {
+%                 next if ( not defined $GroupId );
+%                 my $GroupName = $GroupIdToName{$GroupId};
+%                 if (not defined $GroupName) {
+%                     next if ( not $GroupObj->Load($GroupId) );
+%                     next if ( not $GroupObj->id );
+%                     $GroupIdToName{$GroupId} = $GroupObj->Name;
+%                     $GroupName = $GroupIdToName{$GroupId};
+%                 }
+%                 $DisplayedTemplateGroupNames{$GroupName} = $GroupId;
+%             }
+%             if (scalar keys %DisplayedTemplateGroupNames == 0) {
+<i><&|/l&>Everyone</&></i>\
+%             } else {
+%                 my $GroupNum = 0;
+%                 foreach (sort { $a cmp $b } keys %DisplayedTemplateGroupNames) {
+%                     $GroupNum++;
+%                     if ($GroupNum > 1) {
+<br />\
+%                     }
+<% $_ %>\
+%                 }
+%             }
+%         }
+</table>
+</div>
+%     } else {
+<p><i><&|/l&>This queue has no template tickets.</&></i></p>
+%     }
 </&>
 \
 %     if ( $CanEdit ) {
