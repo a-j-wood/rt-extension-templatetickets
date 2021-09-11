@@ -1,6 +1,18 @@
 <%doc>
 List the ticket templates associated with a queue, add a new one, or edit an
 existing one.
+
+Template definitions are stored in the "TemplateTicketsDefinition" attribute
+of tickets, consisting of a hashref containing:
+
+  Category      - category name or empty string
+  Description   - description of the template
+  ChildTickets  - whether to include child tickets (1 or 0)
+  Groups        - array ref of group IDs who can use this template
+  Fields        - array ref of field names to include in the template
+  ChildFields   - array ref of field names to include in child tickets
+
+If the "Groups" array ref is empty, the template is unrestricted.  
 </%doc>
 \
 <%ARGS>
@@ -20,6 +32,8 @@ if ( !$QueueObj->id ) {
     Abort( loc( "Queue [_1] not found", $id ) );
 }
 
+# Check user permissions.
+#
 my $CanView = $QueueObj->CurrentUserHasRight('ShowTicketTemplate');
 my $CanEdit = $QueueObj->CurrentUserHasRight('ModifyTicketTemplate');
 if (not(   $CanView
@@ -29,69 +43,118 @@ if (not(   $CanView
     Abort( loc('Permission denied') );
 }
 
+# Mapping of internal field names to displayed name.
+#
 my %FieldNames = (
     'Subject'       => loc('Subject'),
     'Content'       => loc('Content'),
     'Priority'      => loc('Priority'),
     'FinalPriority' => loc('Final priority'),
     'Requestor'     => loc('Requestors'),
-    'CC'            => loc('CCs'),
-    'AdminCC'       => loc('AdminCCs'),
+    'Cc'            => loc('CCs'),
+    'AdminCc'       => loc('AdminCCs'),
     'Queue'         => loc('Queue'),
 );
 
+# Fields to consider on the main ticket.
+#
 my @MainFields = (
     'Subject',   'Content', 'Priority', 'FinalPriority',
-    'Requestor', 'CC',      'AdminCC'
+    'Requestor', 'Cc',      'AdminCc'
 );
-my @DefaultFields      = ( 'Subject', 'Content' );
-my @ChildFields        = ( 'Queue',   @MainFields );
-my @DefaultChildFields = ( 'Queue',   'Subject', 'Content' );
+
+# Fields to consider on child tickets.
+#
+my @ChildFields = ( 'Queue', @MainFields );
+
+# Default field selections when none are chosen.
+#
+my @DefaultFields = ( 'Subject', 'Content' );
+my @DefaultChildFields = ( 'Queue', 'Subject', 'Content' );
 
 my @Results = ();
 
 my $Title = loc( 'Template tickets for queue [_1]', $QueueObj->Name );
 
+# If a ticket has been specified, load it and set the page title as
+# appropriate, clearing the relevant flags if permissions are not
+# sufficient.
+#
 my $TicketObj = undef;
 if ($Ticket) {
     $TicketObj = RT::Ticket->new( $session{'CurrentUser'} );
     $TicketObj->Load($Ticket);
+
     if ( not $TicketObj->id ) {
+
+        # Return to the ticket list if this ticket was not loaded.
+        #
         push @Results, loc( 'Ticket [_1] not found', $Ticket );
         $Ticket         = undef;
         $TicketObj      = undef;
         $CreateTemplate = 0;
+
     } elsif ( not $TicketObj->CurrentUserHasRight('ShowTicket') ) {
+
+        # Return to the ticket list if the user has no permission to view
+        # this ticket.
+        #
         push @Results, loc('No permission to view ticket');
         $Ticket         = undef;
         $TicketObj      = undef;
         $CreateTemplate = 0;
+
     } elsif ( $TicketObj->Queue != $QueueObj->id ) {
+
+        # Return to the ticket list if the chosen ticket isn't in the
+        # current queue.
+        #
         push @Results,
             loc( 'Ticket [_1] is not in queue [_2]',
             $Ticket, $QueueObj->Name || $id );
         $Ticket         = undef;
         $TicketObj      = undef;
         $CreateTemplate = 0;
+
     } elsif ( $CreateTemplate && not $CanEdit ) {
+
+        # Return to the ticket list if we're trying to create a new template
+        # ticket but the user has no permission to modify templates.
+        #
         push @Results,
             loc( 'No permission to modify ticket templates in queue [_1]',
             $QueueObj->Name );
         $Ticket         = undef;
         $TicketObj      = undef;
         $CreateTemplate = 0;
+
     } elsif ($CreateTemplate) {
+
+        # Set the title for creating a new template ticket.
+        #
         $Title = loc( 'Create new template ticket for queue [_1]',
             $QueueObj->Name );
+
     } elsif ( $Delete && $ConfirmDelete && $CanEdit ) {
+
+        # Delete a template ticket, given confirmation and given that the
+        # user has the right permissions, and return to the ticket list.
+        #
         $TicketObj->DeleteAttribute('TemplateTicketsDefinition');
         push @Results, loc( 'Template ticket #[_1] deleted.', $Ticket );
         $Ticket         = undef;
         $TicketObj      = undef;
         $CreateTemplate = 0;
+
     } else {
+
+        # Set the title for displaying a template ticket.
+        #
         $Title = loc( 'Queue [_1]: Template ticket #[_2]: [_3]',
             $QueueObj->Name, $TicketObj->id, $TicketObj->Subject );
+
+        # If deletion was attempted, display the appropriate notice.
+        #
         if ( $Delete && not $ConfirmDelete ) {
             push @Results, loc('Not deleted - deletion not confirmed.');
         } elsif ( $Delete && not $CanEdit ) {
@@ -100,12 +163,18 @@ if ($Ticket) {
     }
 }
 
+# Find all template tickets for this queue.
+#
 my $TemplateTickets = RT::Tickets->new( $session{'CurrentUser'} );
 $TemplateTickets->FromSQL( 'Queue = '
         . $QueueObj->id
         . ' AND HasAttribute = "TemplateTicketsDefinition"' );
 my $TemplateTicketObjects = $TemplateTickets->ItemsArrayRef;
 
+# Read the settings of all the template tickets in this queue, and build a
+# hash of the category names so we can provide them as options in a combobox
+# when editing.
+#
 my %TemplateCategories  = ();
 my %AllTemplateSettings = ();
 $TemplateTickets->GotoFirstItem();
@@ -119,6 +188,8 @@ while ( my $TemplateTicketObj = $TemplateTickets->Next ) {
     $TemplateCategories{ $Settings->{'Category'} }++;
 }
 
+# Sort the template tickets by category and then by subject.
+#
 $TemplateTicketObjects = [
     sort {
         ( $AllTemplateSettings{ $a->id }->{'Category'} || '' ) eq
@@ -129,26 +200,47 @@ $TemplateTicketObjects = [
         } @$TemplateTicketObjects
 ];
 
+# Settings and ticket content of the currently selected template.
+#
 my $TemplateSettings = {};
 my $TemplateSummary  = '';
 my $TemplateContent  = '';
 
+# If a template ticket has been loaded into $TicketObj earlier, get ready to
+# display its details, and perform any appropriate operations on it.
+#
 if ($TicketObj) {
+
+    # Create an object for simulating a read-only version of the ticket
+    # (which the current user has no rights over), so that when we run the
+    # Mason components to display the ticket, they don't include the editing
+    # elements.
+    #
     my $ReadonlyTicketObj = {%$TicketObj};
     bless( $ReadonlyTicketObj, ref $TicketObj );
 
     $ReadonlyTicketObj->{'CurrentUserCanSetOwner'} = sub { return 0; };
     $ReadonlyTicketObj->{'CurrentUserHasRight'}    = sub { return 0; };
 
+    # Limit the ticket history to just the first transaction, since that's
+    # what will provide the "content" for the template.
+    #
     my $TicketHistory = $ReadonlyTicketObj->SortedTransactions;
     $TicketHistory->RowsPerPage(1);
 
+    # Generate the ticket summary display, and then strip out any form
+    # elements and ticket creation links to render it inert.
+    #
     $TemplateSummary = $m->scomp( '/Ticket/Elements/ShowSummary',
         'Ticket' => $ReadonlyTicketObj );
 
     $TemplateSummary =~ s/<form.*?<\/form>//sig;
     $TemplateSummary =~ s/<span\b[^>]*?\bclass=[^>]*?create.*?<\/span>//sig;
 
+    # Generate the ticket content display (i.e. the history, showing only
+    # the opening correspondence), stripping out the action links (reply,
+    # comment, and so on).
+    #
     $TemplateContent = $m->scomp(
         '/Elements/ShowHistory',
         'Object'       => $ReadonlyTicketObj,
@@ -165,6 +257,11 @@ if ($TicketObj) {
     $TemplateContent =~ s/<!--\b.*?-->//sg;
     $TemplateContent =~ s/<span\b[^>]*?\bclass=[^>]*?actions.*$//mig;
 
+    # List the custom fields applicable to this template ticket, storing a
+    # mapping of field name ("CF.<id>") to displayed custom field name, and
+    # add the list of custom fields to the list of fields to consider on the
+    # main ticket.
+    #
     my @TicketCustomFieldIDs = ();
     my $TicketCustomFields   = $TicketObj->CustomFields;
     while ( my $CustomField = $TicketCustomFields->Next ) {
@@ -176,6 +273,10 @@ if ($TicketObj) {
             cmp( $FieldNames{ 'CF.' . $b } || '' )
     } @TicketCustomFieldIDs;
 
+    # Do the same as the above, but for each of the child tickets, adding
+    # the list of all custom fields found to the list of fields to consider
+    # on child tickets.
+    #
     my $mode                      = $RT::Link::TYPEMAP{'Member'}->{'Mode'};
     my $ModeURI                   = "${mode}URI";
     my $ModeObj                   = "${mode}Obj";
@@ -195,6 +296,9 @@ if ($TicketObj) {
         }
         keys %ChildTicketCustomFieldIDs;
 
+    # Load the selected template ticket's settings; if it already has some,
+    # then switch off the "we're creating a new template" flag.
+    #
     my $Attribute = $TicketObj->FirstAttribute('TemplateTicketsDefinition');
     $TemplateSettings = $Attribute->Content || {} if ( defined $Attribute );
     $CreateTemplate = 0 if ( defined $Attribute );
@@ -210,6 +314,10 @@ if ($TicketObj) {
             if ( not defined $TemplateSettings->{'Description'} );
         $TemplateSettings->{'ChildTickets'} = $ARGS{'ChildTickets'} ? 1 : 0;
 
+        # Note that the groups can be provided as IDs or as names, so we use
+        # RT::Group::LoadUserDefinedGroup first (which can go by name)
+        # rather than RT::Group::Load (which only takes an ID).
+        #
         my %GroupIDs = ();
         my $GroupObj = RT::Group->new( $session{'CurrentUser'} );
         foreach my $GroupId (
@@ -261,17 +369,25 @@ if ($TicketObj) {
         push @Results, loc('Changes stored.');
     }
 
+    # Select some default fields if none are selected.
+    #
     $TemplateSettings->{'Fields'} = [@DefaultFields]
         if ( scalar @{ $TemplateSettings->{'Fields'} || [] } == 0 );
     $TemplateSettings->{'ChildFields'} = [@DefaultChildFields]
         if ( scalar @{ $TemplateSettings->{'ChildFields'} || [] } == 0 );
 }
 
+# Make hashes of the selected main and child fields for easier lookup when
+# listing all possible fields to choose from in the form.
+#
 my %SelectedFields
     = map { ( $_, 1 ) } @{ $TemplateSettings->{'Fields'} || [] };
 my %SelectedChildFields
     = map { ( $_, 1 ) } @{ $TemplateSettings->{'ChildFields'} || [] };
 
+# Do the same for the groups, also looking up the group names in the
+# process.
+#
 my %SelectedGroups = ();
 my $GroupObj       = RT::Group->new( $session{'CurrentUser'} );
 foreach my $GroupId ( @{ $TemplateSettings->{'Groups'} || [] } ) {
