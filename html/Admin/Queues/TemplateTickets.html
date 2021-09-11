@@ -5,8 +5,11 @@ existing one.
 \
 <%ARGS>
 $id
-$Ticket => undef
+$Ticket         => undef
 $CreateTemplate => undef
+$Store          => undef
+$Delete         => undef
+$ConfirmDelete  => undef
 </%ARGS>
 \
 <%INIT>
@@ -70,9 +73,7 @@ if ($Ticket) {
         $Ticket         = undef;
         $TicketObj      = undef;
         $CreateTemplate = 0;
-    } elsif ( $CreateTemplate
-        && not $QueueObj->CurrentUserHasRight('ModifyTicketTemplate') )
-    {
+    } elsif ( $CreateTemplate && not $CanEdit ) {
         push @Results,
             loc( 'No permission to modify ticket templates in queue [_1]',
             $QueueObj->Name );
@@ -82,10 +83,39 @@ if ($Ticket) {
     } elsif ($CreateTemplate) {
         $Title = loc( 'Create new template ticket for queue [_1]',
             $QueueObj->Name );
+    } elsif ( $Delete && $ConfirmDelete && $CanEdit ) {
+        $TicketObj->DeleteAttribute('TemplateTicketsDefinition');
+        push @Results, loc( 'Template ticket #[_1] deleted.', $Ticket );
+        $Ticket         = undef;
+        $TicketObj      = undef;
+        $CreateTemplate = 0;
     } else {
         $Title = loc( 'Queue [_1]: Template ticket #[_2]: [_3]',
             $QueueObj->Name, $TicketObj->id, $TicketObj->Subject );
+        if ( $Delete && not $ConfirmDelete ) {
+            push @Results, loc('Not deleted - deletion not confirmed.');
+        } elsif ( $Delete && not $CanEdit ) {
+            push @Results, loc('Not deleted - permission denied.');
+        }
     }
+}
+
+my $TemplateTickets = RT::Tickets->new( $session{'CurrentUser'} );
+$TemplateTickets->FromSQL( 'Queue = '
+        . $QueueObj->id
+        . ' AND HasAttribute = "TemplateTicketsDefinition"' );
+
+my %TemplateCategories  = ();
+my %AllTemplateSettings = ();
+$TemplateTickets->GotoFirstItem();
+while ( my $TemplateTicketObj = $TemplateTickets->Next ) {
+    my $Attribute
+        = $TemplateTicketObj->FirstAttribute('TemplateTicketsDefinition');
+    next if ( not defined $Attribute );
+    my $Settings = $Attribute->Content;
+    next if ( not defined $Settings );
+    $AllTemplateSettings{ $TemplateTicketObj->id } = $Settings;
+    $TemplateCategories{ $Settings->{'Category'} }++;
 }
 
 my $TemplateSettings = {};
@@ -127,12 +157,13 @@ if ($TicketObj) {
     my @TicketCustomFieldIDs = ();
     my $TicketCustomFields   = $TicketObj->CustomFields;
     while ( my $CustomField = $TicketCustomFields->Next ) {
-        push @TicketCustomFieldIDs, 'CF.'.$CustomField->id;
+        push @TicketCustomFieldIDs, 'CF.' . $CustomField->id;
         $FieldNames{ 'CF.' . $CustomField->id } = $CustomField->Name;
     }
-    push @MainFields,
-        sort { $FieldNames{ 'CF.' . $a } cmp $FieldNames{ 'CF.' . $b } }
-        @TicketCustomFieldIDs;
+    push @MainFields, sort {
+        ( $FieldNames{ 'CF.' . $a } || '' )
+            cmp( $FieldNames{ 'CF.' . $b } || '' )
+    } @TicketCustomFieldIDs;
 
     my $mode                      = $RT::Link::TYPEMAP{'Member'}->{'Mode'};
     my $ModeURI                   = "${mode}URI";
@@ -143,22 +174,100 @@ if ($TicketObj) {
         my $ChildTicketObj          = $ChildTicketLink->$ModeObj;
         my $ChildTicketCustomFields = $ChildTicketObj->CustomFields;
         while ( my $CustomField = $ChildTicketCustomFields->Next ) {
-            $ChildTicketCustomFieldIDs{ 'CF.'.$CustomField->id } = 1;
+            $ChildTicketCustomFieldIDs{ 'CF.' . $CustomField->id } = 1;
             $FieldNames{ 'CF.' . $CustomField->id } = $CustomField->Name;
         }
     }
-    push @ChildFields,
-        sort { $FieldNames{ 'CF.' . $a } cmp $FieldNames{ 'CF.' . $b } }
+    push @ChildFields, sort {
+        ( $FieldNames{ 'CF.' . $a } || '' )
+            cmp( $FieldNames{ 'CF.' . $b } || '' )
+        }
         keys %ChildTicketCustomFieldIDs;
 
     my $Attribute = $TicketObj->FirstAttribute('TemplateTicketsDefinition');
     $TemplateSettings = $Attribute->Content || {} if ( defined $Attribute );
+    $CreateTemplate = 0 if ( defined $Attribute );
 
-    $TemplateSettings->{'Fields'} = [ @DefaultFields ] if (scalar @{$TemplateSettings->{'Fields'}||[]} == 0);
-    $TemplateSettings->{'ChildFields'} = [ @DefaultChildFields ] if (scalar @{$TemplateSettings->{'ChildFields'}||[]} == 0);
+    # Update the template settings from the submitted form arguments.
+    #
+    if ( $CanEdit && $Store ) {
+        $TemplateSettings->{'Category'} = $ARGS{'Category'};
+        $TemplateSettings->{'Category'} = ''
+            if ( not defined $TemplateSettings->{'Category'} );
+        $TemplateSettings->{'Description'} = $ARGS{'Description'};
+        $TemplateSettings->{'Description'} = ''
+            if ( not defined $TemplateSettings->{'Description'} );
+        $TemplateSettings->{'ChildTickets'} = $ARGS{'ChildTickets'} ? 1 : 0;
 
-    # TODO: update settings when appropriate
+        my %GroupIDs = ();
+        my $GroupObj = RT::Group->new( $session{'CurrentUser'} );
+        foreach my $GroupId (
+            @{  ref $ARGS{'TemplateGroups'}
+                ? $ARGS{'TemplateGroups'}
+                : [ $ARGS{'TemplateGroups'} ]
+            }
+            )
+        {
+            next if ( not defined $GroupId );
+            if ((      $GroupObj->LoadUserDefinedGroup($GroupId)
+                    || $GroupObj->Load($GroupId)
+                )
+                && $GroupObj->id
+               )
+            {
+                $GroupIDs{ $GroupObj->id } = 1;
+            } else {
+                push @Results,
+                    loc( 'Ignoring group [_1] - not found.', $GroupId );
+            }
+        }
+        $TemplateSettings->{'Groups'} = [ keys %GroupIDs ];
 
+        $TemplateSettings->{'Fields'} = [
+            grep { defined $_ } @{
+                ref $ARGS{'TemplateFields'}
+                ? $ARGS{'TemplateFields'}
+                : [ $ARGS{'TemplateFields'} ]
+                }
+        ];
+
+        $TemplateSettings->{'ChildFields'} = [
+            grep { defined $_ } @{
+                ref $ARGS{'TemplateChildFields'}
+                ? $ARGS{'TemplateChildFields'}
+                : [ $ARGS{'TemplateChildFields'} ]
+                }
+        ];
+
+        $TicketObj->SetAttribute(
+            'Name'        => 'TemplateTicketsDefinition',
+            'Description' => 'Settings of a template ticket',
+            Content       => $TemplateSettings
+        );
+
+        $TemplateCategories{ $TemplateSettings->{'Category'} }++;
+
+        push @Results, loc('Changes stored.');
+    }
+
+    $TemplateSettings->{'Fields'} = [@DefaultFields]
+        if ( scalar @{ $TemplateSettings->{'Fields'} || [] } == 0 );
+    $TemplateSettings->{'ChildFields'} = [@DefaultChildFields]
+        if ( scalar @{ $TemplateSettings->{'ChildFields'} || [] } == 0 );
+}
+
+my %SelectedFields
+    = map { ( $_, 1 ) } @{ $TemplateSettings->{'Fields'} || [] };
+my %SelectedChildFields
+    = map { ( $_, 1 ) } @{ $TemplateSettings->{'ChildFields'} || [] };
+
+my %SelectedGroups = ();
+my $GroupObj       = RT::Group->new( $session{'CurrentUser'} );
+foreach my $GroupId ( @{ $TemplateSettings->{'Groups'} || [] } ) {
+    next if ( not defined $GroupId );
+    next if ( not $GroupObj->Load($GroupId) );
+    next if ( not $GroupObj->id );
+    $SelectedGroups{ $GroupObj->id } = $GroupObj->Name;
 }
 </%INIT>
 \
@@ -170,7 +279,7 @@ if ($TicketObj) {
 \
 <&| /Widgets/TitleBox, title => loc('Template ticket configuration') &>
 % if ($CanEdit) {
-<form action="TemplateTickets.html">
+<form action="TemplateTickets.html" method="post">
 <input type="hidden" name="id" value="<% $id %>" />
 <input type="hidden" name="Ticket" value="<% $Ticket %>" />
 <input type="hidden" name="Store" value="1" />
@@ -184,7 +293,7 @@ if ($TicketObj) {
  <tr>\
  <th style="text-align:right;"><&|/l&>Category</&>:</th>\
 % if ($CanEdit) {
- <td><input type="text" size="30" name="Category" value="<% $ARGS{'Category'} || $TemplateSettings->{'Category'} %>" /></td>\
+ <td><& /Widgets/ComboBox, 'Name' => 'Category', 'Size' => 30, 'Default' => $ARGS{'Category'} || $TemplateSettings->{'Category'}, 'Values' => [sort { $a cmp $b } keys %TemplateCategories] &></td>\
 % } else {
  <td><% $TemplateSettings->{'Category'} %></td>\
 % }
@@ -220,7 +329,9 @@ if ($TicketObj) {
 <div style="height:10em;overflow:auto;">
 <ul id="TemplateGroupsList">
 <li class="EmptyList"><i><&|/l&>No groups selected - unrestricted access</&></i></li>
-%# TODO: list selected groups
+% foreach (sort { $SelectedGroups{$a} cmp $SelectedGroups{$b} } keys %SelectedGroups) {
+<li><button><&|/l&>Remove</&></button> <% $SelectedGroups{$_} %><input type="hidden" name="TemplateGroups" value="<% $_ %>" /></li>
+% }
 </ul>
 </div>
 </td><td style="vertical-align:top;border-left:solid black 1px;">
@@ -229,8 +340,8 @@ if ($TicketObj) {
 <div style="height:12em;overflow:auto;">
 % foreach my $Field (@MainFields) {
 %     if ($CanEdit) {
-<label><input type="checkbox" name="TemplateFields" value="<% $Field %>" <% (grep { $_ eq $Field } @{$TemplateSettings->{'Fields'}||[]}) ? 'checked' : '' %> /> <% $FieldNames{$Field} %></label><br />
-%     } elsif (grep { $_ eq $Field } @{$TemplateSettings->{'Fields'}||[]}) {
+<label><input type="checkbox" name="TemplateFields" value="<% $Field %>" <% $SelectedFields{$Field} ? 'checked' : '' %> /> <% $FieldNames{$Field} %></label><br />
+%     } elsif ($SelectedFields{$Field}) {
 <% $FieldNames{$Field} %><br />
 %     }
 % }
@@ -241,8 +352,8 @@ if ($TicketObj) {
 <div style="height:12em;overflow:auto;">
 % foreach my $Field (@ChildFields) {
 %     if ($CanEdit) {
-<label><input type="checkbox" name="TemplateChildFields" value="<% $Field %>" <% (grep { $_ eq $Field } @{$TemplateSettings->{'ChildFields'}||[]}) ? 'checked' : '' %> /> <% $FieldNames{$Field} %></label><br />
-%     } elsif (grep { $_ eq $Field } @{$TemplateSettings->{'ChildFields'}||[]}) {
+<label><input type="checkbox" name="TemplateChildFields" value="<% $Field %>" <% $SelectedChildFields{$Field} ? 'checked' : '' %> /> <% $FieldNames{$Field} %></label><br />
+%     } elsif ($SelectedChildFields{$Field}) {
 <% $FieldNames{$Field} %><br />
 %     }
 % }
@@ -306,8 +417,25 @@ jQuery(function () {
         return false;
     });
     jQuery('#TemplateGroupsList li button').on('click', removeGroup);
+    var itemCount = jQuery('#TemplateGroupsList li').length;
+    if (itemCount > 1) {
+    	jQuery('#TemplateGroupsList li.EmptyList').hide();
+    }
 });
 </script>
+%     if (not $CreateTemplate) {
+<div style="text-align:right;margin-top:4em;">
+<form action="TemplateTickets.html" method="post">
+<input type="hidden" name="id" value="<% $id %>" />
+<input type="hidden" name="Ticket" value="<% $Ticket %>" />
+<div class="error" style="padding:0;display:inline-block;"><div class="error" style="padding:1em;border:solid #400 1px;text-align:left;display:inline-block;">
+<input type="submit" name="Delete" value="<&|/l&>Delete this template ticket</&>" />
+<br />
+<small><input required type="checkbox" name="ConfirmDelete" value="1" /> <&|/l&>Check this box to confirm</&></small>
+</div></div>
+</form>
+</div>
+%     }
 % }
 % if (not ($ARGS{'ChildTickets'} || $TemplateSettings->{'ChildTickets'})) {
 <script type="text/javascript">
@@ -344,7 +472,7 @@ jQuery(function () {
 TODO: list of template tickets
 </&>
 \
-%     if ( $QueueObj->CurrentUserHasRight('ModifyTicketTemplate') ) {
+%     if ( $CanEdit ) {
 <&| /Widgets/TitleBox, title => loc('Create a new template ticket') &>
 <form action="TemplateTickets.html" method="post">
 <input type="hidden" name="id" value="<% $id %>" />
