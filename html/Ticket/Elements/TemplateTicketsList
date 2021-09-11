@@ -4,8 +4,11 @@ that queue which are available to the current user, keyed by ticket ID.
 
 Each value is a hashref containing the ticket template settings from the
 "TemplateTicketsDefinition" attribute (for full details, see
-/Admin/Queues/TemplateTickets.html), with an extra key "Ticket" whose value
-is the RT::Ticket object containing the template ticket itself.
+/Admin/Queues/TemplateTickets.html), with these extra keys:
+
+  Ticket  - the RT::Ticket object containing the template ticket itself
+  id      - the ticket ID
+  Subject - the ticket subject
 
 Note that the tickets are loaded as the current user, so they need to have
 permission to see them.
@@ -63,9 +66,14 @@ while ( my $TemplateTicketObj = $TemplateTickets->Next ) {
         last;
     }
 
-    $Templates->{ $TemplateTicketObj->id }
-        = { %$Settings, 'Ticket' => $TemplateTicketObj }
-        if ($UserCanSeeThisTemplate);
+    next if ( not $UserCanSeeThisTemplate );
+
+    $Templates->{ $TemplateTicketObj->id } = {
+        %$Settings,
+        'Ticket'  => $TemplateTicketObj,
+        'id'      => $TemplateTicketObj->id,
+        'Subject' => $TemplateTicketObj->Subject
+    };
 }
 
 return;
