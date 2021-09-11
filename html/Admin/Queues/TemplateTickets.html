@@ -29,7 +29,7 @@ my $QueueObj = RT::Queue->new( $session{'CurrentUser'} );
 $QueueObj->Load($id);
 
 if ( !$QueueObj->id ) {
-    Abort( loc( "Queue [_1] not found", $id ) );
+    Abort( loc( 'Queue [_1] not found', $id ) );
 }
 
 # Check user permissions.
@@ -50,7 +50,7 @@ my %FieldNames = (
     'Content'       => loc('Content'),
     'Priority'      => loc('Priority'),
     'FinalPriority' => loc('Final priority'),
-    'Requestor'     => loc('Requestors'),
+    'Requestors'    => loc('Requestors'),
     'Cc'            => loc('CCs'),
     'AdminCc'       => loc('AdminCCs'),
     'Queue'         => loc('Queue'),
@@ -59,8 +59,8 @@ my %FieldNames = (
 # Fields to consider on the main ticket.
 #
 my @MainFields = (
-    'Subject',   'Content', 'Priority', 'FinalPriority',
-    'Requestor', 'Cc',      'AdminCc'
+    'Subject',    'Content', 'Priority', 'FinalPriority',
+    'Requestors', 'Cc',      'AdminCc'
 );
 
 # Fields to consider on child tickets.
