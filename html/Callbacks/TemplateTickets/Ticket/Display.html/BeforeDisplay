@@ -187,6 +187,29 @@ while ( my $TemplateChildTicketLink = $TemplateChildTicketLinks->Next ) {
         ( $NewChildTicketObj, @ChildActions ) = CreateTicket(%CreateArgs);
     };
 
+    # Set the attributes on the new child ticket.
+    #
+    if ( defined $NewChildTicketObj ) {
+        $NewChildTicketObj->SetAttribute(
+            'Name' => 'TemplateTicketId',
+            'Description' =>
+                'The ID of the ticket which was used as a template for this one',
+            'Content' => $ARGSRef->{'Attribute-TemplateTicketId'}
+        );
+        $NewChildTicketObj->SetAttribute(
+            'Name' => 'TemplateTicketSubject',
+            'Description' =>
+                'The subject of the ticket which was used as a template for this one',
+            'Content' => $ARGSRef->{'Attribute-TemplateTicketSubject'}
+        );
+        $NewChildTicketObj->SetAttribute(
+            'Name' => 'TemplateTicketDescription',
+            'Description' =>
+                'The description of the template used when creating this ticket',
+            'Content' => $ARGSRef->{'Attribute-TemplateTicketDescription'}
+        );
+    }
+
     push @$Actions, @ChildActions if ( defined $Actions );
 }
 
