@@ -5,12 +5,13 @@ existing one.
 Template definitions are stored in the "TemplateTicketsDefinition" attribute
 of tickets, consisting of a hashref containing:
 
-  Category      - category name or empty string
-  Description   - description of the template
-  ChildTickets  - whether to include child tickets (1 or 0)
-  Groups        - array ref of group IDs who can use this template
-  Fields        - array ref of field names to include in the template
-  ChildFields   - array ref of field names to include in child tickets
+  Category       - category name or empty string
+  Description    - description of the template
+  ChildTickets   - whether to include child tickets (1 or 0)
+  ShowDerivation - whether to show "derived from template" in new tickets
+  Groups         - array ref of group IDs who can use this template
+  Fields         - array ref of field names to include in the template
+  ChildFields    - array ref of field names to include in child tickets
 
 If the "Groups" array ref is empty, the template is unrestricted.  
 </%doc>
@@ -313,6 +314,7 @@ if ($TicketObj) {
         $TemplateSettings->{'Description'} = ''
             if ( not defined $TemplateSettings->{'Description'} );
         $TemplateSettings->{'ChildTickets'} = $ARGS{'ChildTickets'} ? 1 : 0;
+        $TemplateSettings->{'ShowDerivation'} = $ARGS{'ShowDerivation'} ? 1 : 0;
 
         # Note that the groups can be provided as IDs or as names, so we use
         # RT::Group::LoadUserDefinedGroup first (which can go by name)
@@ -431,6 +433,16 @@ foreach my $GroupId ( @{ $TemplateSettings->{'Groups'} || [] } ) {
  <td><textarea name="Description" rows="4" cols="30"><% $ARGS{'Description'} || $TemplateSettings->{'Description'} %></textarea></td>\
 % } else {
  <td><% $TemplateSettings->{'Description'} %></td>\
+% }
+ </tr>
+ <tr>\
+ <th style="text-align:right;white-space:nowrap;"><&|/l&>Show derivation</&>:</th>\
+% if ($CanEdit) {
+ <td><label><input type="checkbox" name="ShowDerivation" value="1" <% ($ARGS{'ShowDerivation'} || $TemplateSettings->{'ShowDerivation'}) ? 'checked' : '' %> /> <&|/l&>Show a link to this template from tickets created from it</&></label></td>\
+% } elsif ($TemplateSettings->{'ShowDerivation'}) {
+ <td><&|/l&>Show a link to this template from tickets created from it</&></td>\
+% } else {
+ <td><&|/l&>Do not show a link to this template from tickets created from it</&></td>\
 % }
  </tr>
  <tr>\

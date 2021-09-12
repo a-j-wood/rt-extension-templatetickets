@@ -44,25 +44,13 @@ return if ( not $ChosenTemplate );
 
 my $TemplateTicketObj = $ChosenTemplate->{'Ticket'};
 
-# Set the attributes on the new ticket.
+# Set the attribute on the new ticket.
 #
 ${$TicketObj}->SetAttribute(
     'Name' => 'TemplateTicketId',
     'Description' =>
         'The ID of the ticket which was used as a template for this one',
     'Content' => $ARGSRef->{'Attribute-TemplateTicketId'}
-);
-${$TicketObj}->SetAttribute(
-    'Name' => 'TemplateTicketSubject',
-    'Description' =>
-        'The subject of the ticket which was used as a template for this one',
-    'Content' => $ARGSRef->{'Attribute-TemplateTicketSubject'}
-);
-${$TicketObj}->SetAttribute(
-    'Name' => 'TemplateTicketDescription',
-    'Description' =>
-        'The description of the template used when creating this ticket',
-    'Content' => $ARGSRef->{'Attribute-TemplateTicketDescription'}
 );
 
 # If there are no child tickets to create, just return.
@@ -187,7 +175,7 @@ while ( my $TemplateChildTicketLink = $TemplateChildTicketLinks->Next ) {
         ( $NewChildTicketObj, @ChildActions ) = CreateTicket(%CreateArgs);
     };
 
-    # Set the attributes on the new child ticket.
+    # Set the attribute on the new child ticket.
     #
     if ( defined $NewChildTicketObj ) {
         $NewChildTicketObj->SetAttribute(
@@ -195,18 +183,6 @@ while ( my $TemplateChildTicketLink = $TemplateChildTicketLinks->Next ) {
             'Description' =>
                 'The ID of the ticket which was used as a template for this one',
             'Content' => $ARGSRef->{'Attribute-TemplateTicketId'}
-        );
-        $NewChildTicketObj->SetAttribute(
-            'Name' => 'TemplateTicketSubject',
-            'Description' =>
-                'The subject of the ticket which was used as a template for this one',
-            'Content' => $ARGSRef->{'Attribute-TemplateTicketSubject'}
-        );
-        $NewChildTicketObj->SetAttribute(
-            'Name' => 'TemplateTicketDescription',
-            'Description' =>
-                'The description of the template used when creating this ticket',
-            'Content' => $ARGSRef->{'Attribute-TemplateTicketDescription'}
         );
     }
 

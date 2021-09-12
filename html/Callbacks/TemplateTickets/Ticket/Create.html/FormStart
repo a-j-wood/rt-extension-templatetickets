@@ -55,6 +55,4 @@ if ( $ARGSRef->{'LoadTemplateTicket'} ) {
 \
 % if ( $ChosenTemplate ) {
 <input type="hidden" name="Attribute-TemplateTicketId" value="<% $ChosenTemplate->{'id'} %>" />
-<input type="hidden" name="Attribute-TemplateTicketSubject" value="<% $ChosenTemplate->{'Subject'} %>" />
-<input type="hidden" name="Attribute-TemplateTicketDescription" value="<% $ChosenTemplate->{'Description'} %>" />
 % }
