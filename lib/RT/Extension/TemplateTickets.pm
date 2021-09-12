@@ -1,4 +1,4 @@
-use strict;
+  use strict;
 use warnings;
 
 package RT::Extension::TemplateTickets;
@@ -134,8 +134,8 @@ Now that you have a ticket to turn into a template:
 
 =item 1.
 
-Go to I<Admin> - I<Queues>, click on the queue, and then go to I<Templates>
-- I<Tickets> in the page menu.
+Go to I<Admin> - I<Queues>, click on the queue, and then go to
+I<Templates> - I<Tickets> in the page menu.
 
 =item 2.
 
@@ -252,8 +252,8 @@ Now that you have the set of tickets to turn into a template:
 
 =item 1.
 
-Go to I<Admin> - I<Queues>, click on the queue, and then go to I<Templates>
-- I<Tickets> in the page menu.
+Go to I<Admin> - I<Queues>, click on the queue, and then go to
+I<Templates> - I<Tickets> in the page menu.
 
 =item 2.
 

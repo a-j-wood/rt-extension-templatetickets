@@ -108,8 +108,8 @@ and make a note of its ticket number.
 
 Now that you have a ticket to turn into a template:
 
-1. Go to _Admin_ - _Queues_, click on the queue, and then go to _Templates_
-- _Tickets_ in the page menu.
+1. Go to _Admin_ - _Queues_, click on the queue, and then go to
+_Templates_ - _Tickets_ in the page menu.
 2. Under the _Create a new template ticket_ heading, type the ticket number
 into the box and click on the **Create** button.
 3. The template configuration page shows the settings at the top, and a view of
@@ -199,8 +199,8 @@ something similar to the parent ticket.  Resolve all three tickets.
 
 Now that you have the set of tickets to turn into a template:
 
-1. Go to _Admin_ - _Queues_, click on the queue, and then go to _Templates_
-- _Tickets_ in the page menu.
+1. Go to _Admin_ - _Queues_, click on the queue, and then go to
+_Templates_ - _Tickets_ in the page menu.
 2. Under the _Create a new template ticket_ heading, type the ticket number of
 the first (parent) ticket into the box and click on the **Create** button.
 3. Enter a category and description, and choose whether to show the originating
